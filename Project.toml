@@ -1,0 +1,13 @@
+name = "LMDiskANN"
+uuid = "a2e5363b-c4e1-4593-9e2f-a2937b345987"
+authors = ["Alexander V. Mantzaris"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
