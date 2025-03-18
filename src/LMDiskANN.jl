@@ -639,7 +639,7 @@ function delete!(index::LMDiskANNIndex, node_id::Int)
     push!(index.freelist, node_id)
     
     # 7 zero out the vector data on disk
-    index.vecs[:, node_id+1] .= 0.0f0
+    index.vecs[:, node_id+1] .= Float32(0.0)
     
     # 8 update metadata
     saveIndex(index)
