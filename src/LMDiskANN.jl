@@ -8,7 +8,7 @@ using Serialization
 
 const DEFAULT_MAX_DEGREE = 32 #max number of neighbors
 const SEARCH_LIST_SIZE   = 64 #search BFS/greedy queue size
-const EF_SEARCH          = 50 #search expansion factor
+const EF_SEARCH          = 100 #search expansion factor
 const EF_CONSTRUCTION    = 100 #construction expansion factor
 
 

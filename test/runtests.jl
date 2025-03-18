@@ -6,9 +6,6 @@ using LinearAlgebra
 
 Random.seed!(1)
 
-@testset "LMDiskANN.jl" begin
-    @test 1 == 1
-end
 
 
 function clean_up()
@@ -171,5 +168,150 @@ end
         end
     end
 
+    clean_up()
+end
+
+
+@testset "medium-Scale Basic Test (dim=100, num_vectors=10_000)" begin
+    clean_up()
+
+    base_path = mktempdir(prefix="temp_lm_diskann_medium_test_")
+    index_path = joinpath(base_path, "test_index_medium")
+    
+    dim = 100
+    num_vectors = 10_000
+    
+    test_vectors = [rand(Float32, dim) for _ in 1:num_vectors]
+
+    for i in 1:num_vectors
+        test_vectors[i] ./= norm(test_vectors[i]) + 1e-9
+    end
+    
+    #make new index
+    @info "making index with dim=$dim ..."
+    index = LMDiskANN.createIndex(index_path, dim)
+    
+    @info "Inserting $num_vectors vectors ..."
+    for v in test_vectors
+        LMDiskANN.insert!(index, v)
+    end
+    @test index.num_points == num_vectors
+    
+    @testset "Search Checks" begin
+        num_queries = 10
+        top_k = 10
+        for q in 1:num_queries
+            query = rand(Float32, dim)
+            query ./= norm(query) + 1e-9
+            
+            results = LMDiskANN.search(index, query, topk=top_k)
+            @test length(results) == top_k
+            
+            #check distance ordering
+            dists = [norm(query .- test_vectors[id+1]) for id in results]
+            @test issorted(dists)
+        end
+    end
+    
+    @info "Cleaning up..."
+    clean_up()
+end
+
+
+@testset "Large-Scale Recall Test (dim=100, num_vectors=10_000)" begin
+    clean_up()
+
+    base_path = mktempdir(prefix="temp_lm_diskann_recall_test_")
+    index_path = joinpath(base_path, "test_index_recall")
+    
+    dim = 100
+    num_vectors = 10_000
+    
+    test_vectors = [rand(Float32, dim) for _ in 1:num_vectors]
+    for i in 1:num_vectors
+        test_vectors[i] ./= norm(test_vectors[i]) + 1e-9
+    end
+    
+    index = LMDiskANN.createIndex(index_path, dim)
+    for v in test_vectors
+        LMDiskANN.insert!(index, v)
+    end
+    
+    num_queries = 50
+    top_k = 10
+    
+    query_ids = rand(1:num_vectors, num_queries)  #random indices
+    queries = [test_vectors[qid] for qid in query_ids]
+
+    function brute_force_search(vec::Vector{Float32}, all_vecs::Vector{Vector{Float32}}, k::Int)
+        #return the indices of the top-k nearest neighbors in all_vecs
+        dist_id_pairs = [(norm(vec .- all_vecs[i]), i) for i in 1:length(all_vecs)]
+        sort!(dist_id_pairs, by = x->x[1])  #sort by distance ascending
+        return [p[2] for p in dist_id_pairs[1:k]]  #top-k indices
+    end
+    
+    total_recall = 0.0
+    
+    for i in 1:num_queries
+        qvec = queries[i]
+        true_topk = brute_force_search(qvec, test_vectors, top_k)
+        approx_topk = LMDiskANN.search(index, qvec, topk=top_k)
+        
+        #convert approx_topk from 0-based IDs to 1-based for matching with `true_topk`
+        approx_topk_1based = [id+1 for id in approx_topk]
+        
+        #measure overlap
+        overlap = intersect(Set(true_topk), Set(approx_topk_1based))
+        recall = length(overlap) / top_k
+        total_recall += recall
+                
+        @info "Query $i: recall = $(round(recall, digits=3))"
+    end
+    
+    avg_recall = total_recall / num_queries
+    @info "Average recall over $num_queries queries = $(round(avg_recall, digits=3))"
+    @test round(avg_recall, digits=3) > 0.5
+
+    clean_up()
+end
+
+
+
+@testset "Exact Match in Top-K" begin
+    clean_up()
+    
+    dim = 100
+    num_vectors = 10_000
+    top_k = 10
+    num_repeats = 3  #query the same vector multiple times
+    
+    all_vectors = [rand(Float32, dim) for _ in 1:num_vectors]
+    for i in 1:num_vectors
+        all_vectors[i] ./= (norm(all_vectors[i]) + 1e-9)
+    end
+    
+    index_path = mktempdir() * "/temp_test_index_exact_match"
+    index = LMDiskANN.createIndex(index_path, dim)
+    
+    @info "Inserting $num_vectors vectors..."
+    for v in all_vectors
+        LMDiskANN.insert!(index, v)
+    end
+    @test index.num_points == num_vectors
+    
+    #pick one vector's ID at random to test
+    target_id = rand(0:(num_vectors-1))  # 0-based ID
+    target_vec = all_vectors[target_id+1]
+    
+
+    @testset "Check that querying the exact same vector returns its ID" begin
+        for i in 1:num_repeats
+            query_vec = Vector{Float32}(target_vec)
+            results = LMDiskANN.search(index, query_vec, topk=top_k)
+            
+            @test target_id in results
+        end
+    end
+    
     clean_up()
 end
