@@ -9,7 +9,7 @@ using Serialization
 const DEFAULT_MAX_DEGREE = 32 #max number of neighbors
 const SEARCH_LIST_SIZE   = 64 #search BFS/greedy queue size
 const EF_SEARCH          = 100 #search expansion factor
-const EF_CONSTRUCTION    = 100 #construction expansion factor
+const EF_CONSTRUCTION    = 200 #construction expansion factor
 
 
 """
@@ -457,7 +457,7 @@ function search(index::LMDiskANNIndex, query_vec::AbstractVector{Float32}; topk:
     
     # 3 return top-k
     k = min(topk, length(dist_id_pairs))
-    return [id for (_, id) in dist_id_pairs[1:k]]
+    return [id+1 for (_, id) in dist_id_pairs[1:k]] #return +1 for julia 1 based index
 end
 
 
@@ -511,6 +511,7 @@ id = LMDiskANN.insert!(index, vector)
 ```
 """
 function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32})
+    
     # 1 determine new ID
     new_id = 0
     if !isempty(index.freelist)
@@ -543,18 +544,20 @@ function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32})
         index.entrypoint = new_id
         _set_neighbors(index, new_id, Int[])
         saveIndex(index)
-        return new_id
+        return new_id + 1 #return 1 based for julia
     end
     
     #search for nearest neighbors to connect to
     query = convert(Vector{Float32}, new_vec)
-    nearest_neighbors = search(index, query, topk=index.maxdegree)
+    # nearest_neighbors = search(index, query, topk=index.maxdegree)
+    nearest_neighbors_1based = search(index, query, topk=index.maxdegree)
+    nearest_neighbors_0based = [nbr_id - 1 for nbr_id in nearest_neighbors_1based]
     
     # 5 set neighbors of new node
-    _set_neighbors(index, new_id, nearest_neighbors)
+    _set_neighbors(index, new_id, nearest_neighbors_0based)
     
     # 6 for each nearest neighbor, we might add new_id to its adjacency list
-    for nbr_id in nearest_neighbors
+    for nbr_id in nearest_neighbors_0based
         #get current neighbors of nbr_id
         nbr_neighbors = _get_neighbors(index, nbr_id)
         
@@ -571,7 +574,7 @@ function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32})
     # 7 Save updated metadata
     saveIndex(index)
     
-    return new_id
+    return new_id+1 # return 1 based for julia
 end
 
 """
@@ -594,6 +597,7 @@ LMDiskANN.delete!(index, id)
 """
 function delete!(index::LMDiskANNIndex, node_id::Int)
     # 1 safety checks
+    node_id += -1 #make zero based for here
     if node_id < 0 || node_id >= index.num_points
         error("Invalid node_id: $node_id")
     end
@@ -634,13 +638,13 @@ function delete!(index::LMDiskANNIndex, node_id::Int)
     # 6 mark node_id in freelist
     push!(index.freelist, node_id)
     
-    # 7 optionally zero out the vector data on disk
+    # 7 zero out the vector data on disk
     index.vecs[:, node_id+1] .= 0.0f0
     
     # 8 update metadata
     saveIndex(index)
     
-    return index
+    return nothing
 end
 
 end # module

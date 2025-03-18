@@ -6,16 +6,11 @@ using LinearAlgebra
 
 Random.seed!(1)
 
-
-
 function clean_up()
-    #clean up
     current_dir = pwd()
-
     for fname in readdir(current_dir)
         if startswith(fname, "temp")
             path = joinpath(current_dir, fname)
-            #if a directory remove recursively or its a file remove it
             if isdir(path)
                 rm(path; recursive=true, force=true)
             else
@@ -24,8 +19,6 @@ function clean_up()
         end
     end
 end
-
-
 
 @testset "LMDiskANN Tests Basic" begin
     clean_up()
@@ -36,31 +29,27 @@ end
     dim = 10
     num_vectors = 100
     
-    #generate random test vectors
+    # Generate random test vectors
     test_vectors = [rand(Float32, dim) for _ in 1:num_vectors]
     
-    #normalize vectors
+    # Normalize vectors
     for i in 1:length(test_vectors)
-        test_vectors[i] = test_vectors[i] ./ norm(test_vectors[i])
+        test_vectors[i] ./= norm(test_vectors[i]) + 1e-9
     end
     
     @testset "Index Creation and Loading" begin
-        #create a new index
         index_path = joinpath(test_dir, "test_index")
         index = LMDiskANN.createIndex(index_path, dim)
         
-        #test basic properties
         @test index.dim == dim
         @test index.maxdegree == LMDiskANN.DEFAULT_MAX_DEGREE
         @test index.num_points == 0
         @test isempty(index.freelist)
-        @test index.entrypoint == -1
+        @test index.entrypoint == -1  # -1 internally (no points)
         
-        #save and reload the index
         LMDiskANN.saveIndex(index)
         loaded_index = LMDiskANN.loadIndex(index_path)
         
-        #test that loaded index matches original
         @test loaded_index.dim == index.dim
         @test loaded_index.maxdegree == index.maxdegree
         @test loaded_index.num_points == index.num_points
@@ -68,113 +57,115 @@ end
     end
     
     @testset "Insertion and Search" begin
-        #create a new index
+        # Create a new index
         index_path = joinpath(test_dir, "test_index_insert")
         index = LMDiskANN.createIndex(index_path, dim)
         
-        #insert first vector
+        # Insert first vector
         id1 = LMDiskANN.insert!(index, test_vectors[1])
-        @test id1 == 0  #first ID should be 0
+        @test id1 == 1  # 1-based ID for the first vector
         @test index.num_points == 1
-        @test index.entrypoint == 0
+        # The internal entrypoint is 0
+        @test index.entrypoint == 0  # 0-based inside the struct
+        # If you like, you can also check:
+        #   @test (index.entrypoint + 1) == id1
         
-        #insert second vector
+        # Insert second vector
         id2 = LMDiskANN.insert!(index, test_vectors[2])
-        @test id2 == 1  #second ID should be 1
+        @test id2 == 2  # second ID should be 2
         @test index.num_points == 2
         
-        #insert a few more vectors
+        # Insert a few more vectors
         for i in 3:10
             LMDiskANN.insert!(index, test_vectors[i])
         end
         @test index.num_points == 10
         
-        #test search with a vector already in the index
+        # Test search with a vector already in the index
+        # The 5th vector => user-facing ID is 5
         results = LMDiskANN.search(index, test_vectors[5], topk=1)
         @test length(results) == 1
-        @test results[1] == 4  # ID is 0-based, so vector 5 has ID 4
+        @test results[1] == 5  # 1-based ID should match the original insertion order
         
-        #test search with a new vector (should find nearest)
+        # Test search with a new random vector
         query = rand(Float32, dim)
-        query = query ./ norm(query)
+        query ./= norm(query) + 1e-9
         
         results = LMDiskANN.search(index, query, topk=3)
         @test length(results) == 3
         
-        #verify results are reasonable by checking distances
-        distances = [norm(query - test_vectors[id+1]) for id in results]
-        @test issorted(distances)  #results should be sorted by distance
+        # Verify results are sorted by distance
+        distances = [norm(query - test_vectors[id]) for id in results]
+        @test issorted(distances)
     end
     
     @testset "Deletion" begin
-        #create a new index
         index_path = joinpath(test_dir, "test_index_delete")
         index = LMDiskANN.createIndex(index_path, dim)
         
-        #insert vectors
+        # Insert vectors
         ids = [LMDiskANN.insert!(index, vec) for vec in test_vectors[1:20]]
         @test index.num_points == 20
         @test isempty(index.freelist)
         
-        #delete a vector
+        # Delete a vector => user ID = 5
         delete_id = 5
         LMDiskANN.delete!(index, delete_id)
-        @test delete_id in index.freelist
-        @test index.num_points == 20  # num_points doesn't change
+        # internally the library stored (delete_id - 1) = 4 in freelist
+        @test (delete_id - 1) in index.freelist
+        @test index.num_points == 20  # num_points doesn't decrement
         
-        #search should not return the deleted vector
-        query = test_vectors[delete_id+1]  # The exact vector we deleted
+        # Search should not return that deleted ID
+        query = test_vectors[delete_id]  # The exact vector
         results = LMDiskANN.search(index, query, topk=20)
-        @test !(delete_id in results)
+        @test !(delete_id in results)  # 1-based ID won't appear
         
-        #insert a new vector, should reuse the deleted ID
+        # Insert a new vector, should reuse the deleted ID => i.e. 1-based = 5
         new_vec = rand(Float32, dim)
-        new_vec = new_vec ./ norm(new_vec)
+        new_vec ./= norm(new_vec) + 1e-9
         new_id = LMDiskANN.insert!(index, new_vec)
-        @test new_id == delete_id
+        @test new_id == delete_id  # i.e. 5
         @test isempty(index.freelist)
         
-        #delete the entry point and verify a new one is selected
-        old_entry = index.entrypoint
-        LMDiskANN.delete!(index, old_entry)
-        @test index.entrypoint != old_entry
-        @test index.entrypoint >= 0  # a valid entry point is selected
+        # Delete the entry point => internally entrypoint is 0-based
+        old_entry_1based = index.entrypoint + 1  # user-facing
+        LMDiskANN.delete!(index, old_entry_1based)
+        
+        # The library might pick a new entrypoint
+        @test index.entrypoint != -1  # some valid node or stays -1 if everything is deleted
+        @test index.entrypoint != (old_entry_1based - 1)  # definitely not the same internal ID
     end
     
     @testset "Larger Scale Test" begin
-        # make a new index
         index_path = joinpath(test_dir, "test_index_large")
         index = LMDiskANN.createIndex(index_path, dim)
         
-        #insert all test vectors
         for vec in test_vectors
             LMDiskANN.insert!(index, vec)
         end
         @test index.num_points == num_vectors
         
-        #  search with multiple queries
+        # Basic multi-query check
         num_queries = 10
         k = 5
         for _ in 1:num_queries
             query = rand(Float32, dim)
-            query = query ./ norm(query)
-            
+            query ./= norm(query) + 1e-9
             results = LMDiskANN.search(index, query, topk=k)
             @test length(results) == k
             
-            #verify results are ok
-            distances = [norm(query - test_vectors[id+1]) for id in results]
+            distances = [norm(query - test_vectors[id]) for id in results]
             @test issorted(distances)
         end
     end
-
+    
     clean_up()
 end
 
 
 @testset "medium-Scale Basic Test (dim=100, num_vectors=10_000)" begin
     clean_up()
-
+    
     base_path = mktempdir(prefix="temp_lm_diskann_medium_test_")
     index_path = joinpath(base_path, "test_index_medium")
     
@@ -182,12 +173,10 @@ end
     num_vectors = 10_000
     
     test_vectors = [rand(Float32, dim) for _ in 1:num_vectors]
-
     for i in 1:num_vectors
         test_vectors[i] ./= norm(test_vectors[i]) + 1e-9
     end
     
-    #make new index
     @info "making index with dim=$dim ..."
     index = LMDiskANN.createIndex(index_path, dim)
     
@@ -207,8 +196,8 @@ end
             results = LMDiskANN.search(index, query, topk=top_k)
             @test length(results) == top_k
             
-            #check distance ordering
-            dists = [norm(query .- test_vectors[id+1]) for id in results]
+            # check distance ordering
+            dists = [norm(query - test_vectors[id]) for id in results]
             @test issorted(dists)
         end
     end
@@ -220,7 +209,7 @@ end
 
 @testset "Large-Scale Recall Test (dim=100, num_vectors=10_000)" begin
     clean_up()
-
+    
     base_path = mktempdir(prefix="temp_lm_diskann_recall_test_")
     index_path = joinpath(base_path, "test_index_recall")
     
@@ -240,42 +229,35 @@ end
     num_queries = 50
     top_k = 10
     
-    query_ids = rand(1:num_vectors, num_queries)  #random indices
+    query_ids = rand(1:num_vectors, num_queries)  # random 1-based indices
     queries = [test_vectors[qid] for qid in query_ids]
-
+    
     function brute_force_search(vec::Vector{Float32}, all_vecs::Vector{Vector{Float32}}, k::Int)
-        #return the indices of the top-k nearest neighbors in all_vecs
-        dist_id_pairs = [(norm(vec .- all_vecs[i]), i) for i in 1:length(all_vecs)]
-        sort!(dist_id_pairs, by = x->x[1])  #sort by distance ascending
-        return [p[2] for p in dist_id_pairs[1:k]]  #top-k indices
+        dist_id_pairs = [(norm(vec - all_vecs[i]), i) for i in 1:length(all_vecs)]
+        sort!(dist_id_pairs, by = x->x[1])
+        return [p[2] for p in dist_id_pairs[1:k]]
     end
     
     total_recall = 0.0
     
     for i in 1:num_queries
         qvec = queries[i]
-        true_topk = brute_force_search(qvec, test_vectors, top_k)
-        approx_topk = LMDiskANN.search(index, qvec, topk=top_k)
-        
-        #convert approx_topk from 0-based IDs to 1-based for matching with `true_topk`
-        approx_topk_1based = [id+1 for id in approx_topk]
-        
-        #measure overlap
+        true_topk = brute_force_search(qvec, test_vectors, top_k)  # 1-based vector indices
+        approx_topk_1based = LMDiskANN.search(index, qvec, topk=top_k) # also 1-based
+        # measure overlap in terms of these 1-based indices
         overlap = intersect(Set(true_topk), Set(approx_topk_1based))
         recall = length(overlap) / top_k
         total_recall += recall
-                
+        
         @info "Query $i: recall = $(round(recall, digits=3))"
     end
     
     avg_recall = total_recall / num_queries
     @info "Average recall over $num_queries queries = $(round(avg_recall, digits=3))"
+    
     @test round(avg_recall, digits=3) > 0.5
-
     clean_up()
 end
-
-
 
 @testset "Exact Match in Top-K" begin
     clean_up()
@@ -283,7 +265,7 @@ end
     dim = 100
     num_vectors = 10_000
     top_k = 10
-    num_repeats = 3  #query the same vector multiple times
+    num_repeats = 3
     
     all_vectors = [rand(Float32, dim) for _ in 1:num_vectors]
     for i in 1:num_vectors
@@ -299,16 +281,14 @@ end
     end
     @test index.num_points == num_vectors
     
-    #pick one vector's ID at random to test
-    target_id = rand(0:(num_vectors-1))  # 0-based ID
-    target_vec = all_vectors[target_id+1]
+    # pick one vector's ID (1-based)
+    target_id = rand(1:num_vectors)
+    target_vec = all_vectors[target_id]
     
-
     @testset "Check that querying the exact same vector returns its ID" begin
         for i in 1:num_repeats
             query_vec = Vector{Float32}(target_vec)
             results = LMDiskANN.search(index, query_vec, topk=top_k)
-            
             @test target_id in results
         end
     end
