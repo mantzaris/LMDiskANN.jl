@@ -5,6 +5,8 @@ using Random
 using LinearAlgebra
 using Serialization
 
+include("UserIdMapping.jl")
+export open_databases, close_databases, insert_key!, get_id_from_key, get_key_from_id, delete_by_key!, delete_by_id!, count_entries, clear_database!, clear_all_databases!, list_all_keys
 
 const DEFAULT_MAX_DEGREE = 32 #max number of neighbors
 const SEARCH_LIST_SIZE   = 64 #search BFS/greedy queue size
