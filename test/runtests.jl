@@ -375,3 +375,92 @@ end
     @info "Larger-scale test with $num_vectors vectors, dimension=$dim completed."
     clean_up()
 end
+
+#############################################
+
+
+#do a partial/portion/full brute force on a subset of the data to compare to the ann results
+function partial_brute_force_topk(
+    query_vec::Vector{Float32},
+    all_vecs::Vector{Vector{Float32}},
+    top_k::Int;
+    sample_size::Int=0
+)
+
+    #if sample_size==0 or >= length(all_vecs), we do the full set
+    n = length(all_vecs)
+    chosen_indices = sample_size==0 || sample_size >= n ? collect(1:n) :
+                     rand(1:n, sample_size)
+
+    dist_id_pairs = Vector{Tuple{Float32, Int}}()
+
+    for i in chosen_indices
+        d = norm(query_vec .- all_vecs[i]) #TODO: use Distances.jl
+        push!(dist_id_pairs, (d, i))
+    end
+
+    sort!(dist_id_pairs, by=x->x[1])
+    actual_topk = min(top_k, length(dist_id_pairs))
+    return [p[2] for p in dist_id_pairs[1:actual_topk]]
+end
+
+#a test scenario function for larger sets of vectors
+function run_lmdiskann_test_scenario(path_prefix::String, dim::Int, num_vectors::Int;
+                                     top_k::Int=10, num_queries::Int=20, sample_size_for_brute::Int=500)
+
+    @testset "LMDiskANN scenario: dim=$dim, n=$num_vectors" begin
+        # 1 create index
+        index = createIndex(path_prefix, dim)
+        @test index.dim == dim
+        @test index.num_points == 0
+
+        # 2 generate random vectors
+        all_vectors = [rand(Float32, dim) for _ in 1:num_vectors]
+
+        # 3 insert them with ann_insert!
+        @info "Inserting $num_vectors vectors (dim=$dim)..."
+        for v in all_vectors
+            ann_insert!(index, v)
+        end
+        @test index.num_points == num_vectors
+
+        # 4  perform a recall check
+        #pick 'num_queries' random queries from the dataset and compare top-k results with a partial brute force
+        query_indices = rand(1:num_vectors, num_queries)
+        total_recall = 0.0
+
+        for qidx in query_indices
+            qvec = all_vectors[qidx]
+
+            bf_topk = partial_brute_force_topk(qvec, all_vectors, top_k; sample_size=sample_size_for_brute)
+
+            ann_results = search(index, qvec, topk=top_k)  #each is (maybeKey, ID)
+            approx_ids = [r[2] for r in ann_results]  #1-based indices to all_vectors
+
+            #find overlap with the brute force subset
+            overlap = intersect(Set(bf_topk), Set(approx_ids))
+            recall = length(overlap) / top_k
+            total_recall += recall
+        end
+
+        avg_recall = total_recall / num_queries
+        @info "Scenario dim=$dim, n=$num_vectors => average recall = $(round(avg_recall, digits=3))"
+
+        @test avg_recall >= 0.70
+
+    end
+end
+
+@testset "LMDiskANN Larger Tests" begin
+    clean_up()
+    
+    #SCENARIO 1: 3,000 vectors of dimension=100
+    run_lmdiskann_test_scenario("temp_scenario1", 100, 3000;
+                                top_k=20, num_queries=10, sample_size_for_brute=3000)
+
+    #SCENARIO 2: 100,000 vectors of dimension=10
+    run_lmdiskann_test_scenario("temp_scenario2", 10, 10_000;
+                                top_k=20, num_queries=10, sample_size_for_brute=10_000)
+
+    clean_up()
+end

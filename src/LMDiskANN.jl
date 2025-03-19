@@ -14,10 +14,10 @@ export open_databases, close_databases, insert_key!, get_id_from_key, get_key_fr
 
 export createIndex, loadIndex, close_id_mapping, ann_insert!, ann_delete!, search, get_embedding_from_id, get_embedding_from_key
 
-const DEFAULT_MAX_DEGREE = 32 #max number of neighbors
+const DEFAULT_MAX_DEGREE = 64 #max number of neighbors
 const SEARCH_LIST_SIZE   = 64 #search BFS/greedy queue size
-const EF_SEARCH          = 100 #search expansion factor
-const EF_CONSTRUCTION    = 200 #construction expansion factor
+const EF_SEARCH          = 300 #search expansion factor
+const EF_CONSTRUCTION    = 400 #construction expansion factor
 
 
 """
