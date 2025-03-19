@@ -130,3 +130,79 @@ end
 # LM-DiskANN tests now
 
 
+
+@testset "Minimal LMDiskANN Tests" begin
+    clean_up()
+    
+    index_prefix = "temp_test_index"
+    dim = 4
+    index = createIndex(index_prefix, dim)
+
+    vec2 = rand(Float32, dim)
+    emb1 = rand(Float32, dim)
+
+    @testset "Index Creation" begin        
+        @test index.dim == dim
+        @test index.num_points == 0
+        @test index.entrypoint == -1
+        
+        # Check that the DBs are open
+        @test index.id_mapping_forward !== nothing
+        @test index.id_mapping_reverse !== nothing
+    end
+    
+    @testset "Insertion and Search" begin
+        vec1 = rand(Float32, 4)
+        (genkey, id1) = ann_insert!(index, vec1)
+        @test id1 == 1  # first insertion => 1-based ID is 1
+        @test index.num_points == 1
+        
+        # Insert a second vector with a custom key
+        vec2 = rand(Float32, 4)
+        (key2, id2) = ann_insert!(index, vec2; key="my_key")
+        @test id2 == 2
+        @test key2 == "my_key"
+        @test index.num_points == 2
+        
+        # basic adjacency or BFS check is trivial with only 2 vectors
+        # but we can at least do a quick search
+        results = search(index, vec1, topk=2)
+        # Expect to see something like [(maybeNothing, 1), (maybeNothingOrKey, 2)]
+        @test length(results) <= 2
+        
+        # Retrieve embedding
+        emb1 = get_embedding_from_id(index, id1)
+        @test emb1 == vec1
+        
+        emb2 = get_embedding_from_key(index, "my_key")
+        @test emb2 == vec2
+    end
+    
+    # 4) Deletion
+    @testset "Deletion" begin
+        # Delete the second vector by key
+        ann_delete!(index, "my_key")
+        
+        # Now searching for it should not return it
+        results = search(index, vec2, topk=2)
+        # Expect not to find "my_key"
+        # In a minimal scenario, we might just check that we didn't get 2 results
+        @test all(r[2] != 2 for r in results)
+        
+        # Try to retrieve embedding by key => error or fail
+        try
+            get_embedding_from_key(index, "my_key")
+            @test false  # if we got here, it didn't throw
+        catch e
+            @test e isa ErrorException  # or KeyError
+        end
+        
+        # The first vector should still be present
+        results = search(index, emb1, topk=1)
+        @test length(results) == 1
+        @test results[1][2] == 1
+    end
+    
+    @info "All minimal tests passed."
+    clean_up()
+end

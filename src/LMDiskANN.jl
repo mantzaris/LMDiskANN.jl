@@ -9,7 +9,10 @@ using Distances
 
 
 include("UserIdMapping.jl")
+
 export open_databases, close_databases, insert_key!, get_id_from_key, get_key_from_id, delete_by_key!, delete_by_id!, count_entries, clear_database!, clear_all_databases!, list_all_keys
+
+export createIndex, loadIndex, close_id_mapping, ann_insert!, ann_delete!, search, get_embedding_from_id, get_embedding_from_key
 
 const DEFAULT_MAX_DEGREE = 32 #max number of neighbors
 const SEARCH_LIST_SIZE   = 64 #search BFS/greedy queue size
@@ -257,8 +260,8 @@ function createIndex(path_prefix::String, dim::Int; maxdegree::Int=DEFAULT_MAX_D
     #create initial memory maps (empty at this point)
     vec_mmap, adj_mmap = _mmap_arrays(vecfile, adjfile, dim, maxdegree, max(1, num_points))
 
-    forward_path = path_prefix + "forward_db.leveldb"
-    reverse_path = path_prefix + "reverse_db.leveldb"
+    forward_path = path_prefix * "forward_db.leveldb"
+    reverse_path = path_prefix * "reverse_db.leveldb"
     db_forward, db_reverse = open_databases(forward_path, reverse_path; create_if_missing=true)
     
     return LMDiskANNIndex(vecfile, adjfile, metafile,
@@ -553,7 +556,7 @@ function _prune_neighbors(index::LMDiskANNIndex, node_id::Int, candidates::Vecto
 end
 
 """
-    insert!(index::LMDiskANNIndex, new_vec::Vector{Float32})
+    ann_insert!(index::LMDiskANNIndex, new_vec::Vector{Float32})
 
 Insert a new vector into the index. Updates the adjacency structure.
 Returns the assigned ID of the newly inserted vector.
@@ -570,10 +573,10 @@ Implements Algorithm 2 from the LM-DiskANN paper.
 
 # Example
 ```julia
-(key,id) = LMDiskANN.insert!(index, vector)
+(key,id) = LMDiskANN.ann_insert!(index, vector)
 ```
 """
-function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32}; key::Union{Nothing,String}=nothing)
+function ann_insert!(index::LMDiskANNIndex, new_vec::Vector{Float32}; key::Union{Nothing,String}=nothing)
     
     # 1 determine new ID
     new_id = 0
@@ -607,7 +610,15 @@ function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32}; key::Union{Not
         index.entrypoint = new_id
         _set_neighbors(index, new_id, Int[])
         saveIndex(index)
-        return new_id + 1 #return 1 based for julia
+        # if key was given, store it, else use a generated key
+        if isnothing(key)
+            insert_key!(index.id_mapping_forward, index.id_mapping_reverse,
+                        string(new_id+1), new_id+1)
+            return (string(new_id+1), new_id+1)
+        else
+            insert_key!(index.id_mapping_forward, index.id_mapping_reverse, key, new_id+1)
+            return (key, new_id+1)
+        end
     end
     
     #search for nearest neighbors to connect to
@@ -648,7 +659,7 @@ function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32}; key::Union{Not
 end
 
 """
-    delete!(index::LMDiskANNIndex, node_id::Int)
+    ann_delete!(index::LMDiskANNIndex, node_id::Int)
 
 Delete a vector (and adjacency) from the index.
 Implements Algorithm 3 from the LM-DiskANN paper.
@@ -662,10 +673,10 @@ Implements Algorithm 3 from the LM-DiskANN paper.
 
 # Example
 ```julia
-LMDiskANN.delete!(index, id)
+LMDiskANN.ann_delete!(index, id)
 ```
 """
-function delete!(index::LMDiskANNIndex, node_id::Union{Int,String})
+function ann_delete!(index::LMDiskANNIndex, node_id::Union{Int,String})
 
     if node_id isa String
         node_id = get_id_from_key(index.id_mapping_forward,node_id)
@@ -732,7 +743,7 @@ end
 """
     get_embedding_from_id(index::LMDiskANNIndex, id::Int) -> Vector{Float32}
 
-Given a **1-based** ID (the same ID you'd see returned by `insert!` or in `search`),
+Given a **1-based** ID (the same ID you'd see returned by `ann_insert!` or in `search`),
 retrieve the stored embedding vector from `index.vecs`.
 
 Throws an error if `id` is out of range or if it's already deleted (i.e., in the
@@ -755,7 +766,7 @@ end
 """
     get_embedding_from_key(index::LMDiskANNIndex, key::String) -> Union{Vector{Float32}, Nothing}
 
-ARgument is a **string key** (which was stored during `insert!(..., key=...)`),
+ARgument is a **string key** (which was stored during `ann_insert!(..., key=...)`),
 look up the 1-based ID from the forward DB, then retrieve the embedding.
 
 Throws an error if the key doesn't exist
