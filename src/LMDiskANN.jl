@@ -37,7 +37,7 @@ Fields:
 - `id_mapping_forward`: Optional LevelDB for string key -> internal ID mapping
 - `id_mapping_reverse`: Optional LevelDB for internal ID -> string key mapping
 """
-mutable struct LMDiskANNIndex
+mutable struct LMDiskANNIndex #TODO: type if so that the precision can be regulated
     vecfile::String #path to vectors file
     adjfile::String #path to adjacency file
     metafile::String # path to metadata file
@@ -56,9 +56,9 @@ mutable struct LMDiskANNIndex
     entrypoint::Int
 
     #the user key to internal node id
-    id_mapping_forward::Union{LevelDB2.DB, Nothing}
+    id_mapping_forward::Union{LevelDB2.DB{String,String},Nothing}
     #internal node id to user key
-    id_mapping_reverse::Union{LevelDB2.DB, Nothing}
+    id_mapping_reverse::Union{LevelDB2.DB{String,String},Nothing}
 end
 
 
@@ -370,6 +370,38 @@ function saveIndex(index::LMDiskANNIndex)
 end
 
 
+
+"""
+    close_id_mapping(index::LMDiskANNIndex)
+
+Closes the ID mapping databases if they are open.
+
+# Arguments
+- `index::LMDiskANNIndex`: The index with ID mapping to close
+
+# Returns
+- `LMDiskANNIndex`: The updated index instance with ID mapping closed
+
+# Example
+```julia
+index = LMDiskANN.close_id_mapping(index)
+```
+"""
+function close_id_mapping(index::LMDiskANNIndex)
+    if index.id_mapping_forward !== nothing && index.id_mapping_reverse !== nothing
+        # Close the databases using the UserIdMapping.jl function
+        close_databases(index.id_mapping_forward, index.id_mapping_reverse)
+        
+        # Remove the references
+        index.id_mapping_forward = nothing
+        index.id_mapping_reverse = nothing
+    end
+    
+    return index
+end
+
+
+
 """
     _search_graph(index, query_vec, ef)
 
@@ -461,7 +493,7 @@ results = LMDiskANN.search(index, query_vec, topk=5)
 """
 function search(index::LMDiskANNIndex, query_vec::AbstractVector{Float32}; topk::Int=10)
     if index.num_points == 0
-        return Int[]
+        return Vector{Tuple{Union{String,Nothing}, Int}}()
     end
     
     #convert query to Float32 vector if needed
@@ -481,7 +513,7 @@ function search(index::LMDiskANNIndex, query_vec::AbstractVector{Float32}; topk:
     
     # 3 return top-k
     k = min(topk, length(dist_id_pairs))
-    results = Vector{Tuple{Int, Union{String,Nothing}}}()
+    results = Vector{Tuple{Union{String,Nothing}, Int}}()
     for (dist, cid) in dist_id_pairs[1:k]
         user_key = get_key_from_id(index.id_mapping_reverse, cid+1)
         push!(results, (user_key, cid+1))
@@ -541,7 +573,7 @@ Implements Algorithm 2 from the LM-DiskANN paper.
 (key,id) = LMDiskANN.insert!(index, vector)
 ```
 """
-function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32}; key::Union{nothing,String}=nothing)
+function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32}; key::Union{Nothing,String}=nothing)
     
     # 1 determine new ID
     new_id = 0
@@ -641,40 +673,41 @@ function delete!(index::LMDiskANNIndex, node_id::Union{Int,String})
             return nothing
         end
     end
-    node_id += -1  # make 0-based
+
+    local_id = node_id - 1  # 0-based for adjacency
 
     # 1 safety checks
-    if node_id < 0 || node_id >= index.num_points
-        error("Invalid node_id: $node_id")
+    if local_id < 0 || local_id >= index.num_points
+        error("Invalid local_id: $node_id")
     end
     
-    if node_id in index.freelist
-        error("Node $node_id is already deleted")
+    if local_id in index.freelist
+        error("Node $local_id is already deleted")
     end
     
     # 2 get neighbors of the node to be deleted
-    neighbors = _get_neighbors(index, node_id)
+    neighbors = _get_neighbors(index, local_id)
     
     # 3 for each neighbor, remove node_id from its adjacency list
     for nbr_id in neighbors
         nbr_neighbors = _get_neighbors(index, nbr_id)
         
         #remove node_id from neighbor's list
-        filter!(x -> x != node_id, nbr_neighbors)
+        filter!(x -> x != local_id, nbr_neighbors)
         
         #update neighbor's adjacency list
         _set_neighbors(index, nbr_id, nbr_neighbors)
     end
     
     # 4 clear adjacency of node_id
-    _set_neighbors(index, node_id, Int[])
+    _set_neighbors(index, local_id, Int[])
     
     # 5 if node_id was the entrypoint, we need a new entrypoint
-    if index.entrypoint == node_id
+    if index.entrypoint == local_id
         #find a new entry point (any non-deleted node)
         index.entrypoint = -1
         for cand in 0:(index.num_points-1)
-            if cand != node_id && !(cand in index.freelist)
+            if cand != local_id && !(cand in index.freelist)
                 index.entrypoint = cand
                 break
             end
@@ -682,10 +715,10 @@ function delete!(index::LMDiskANNIndex, node_id::Union{Int,String})
     end
     
     # 6 mark node_id in freelist
-    push!(index.freelist, node_id)
+    push!(index.freelist, local_id)
     
     # 7 zero out the vector data on disk
-    index.vecs[:, node_id+1] .= Float32(0.0)
+    index.vecs[:, local_id+1] .= Float32(0.0)
     
     # 8 update metadata
     saveIndex(index)
@@ -694,5 +727,53 @@ function delete!(index::LMDiskANNIndex, node_id::Union{Int,String})
     
     return nothing
 end
+
+
+"""
+    get_embedding_from_id(index::LMDiskANNIndex, id::Int) -> Vector{Float32}
+
+Given a **1-based** ID (the same ID you'd see returned by `insert!` or in `search`),
+retrieve the stored embedding vector from `index.vecs`.
+
+Throws an error if `id` is out of range or if it's already deleted (i.e., in the
+freelist).
+"""
+function get_embedding_from_id(index::LMDiskANNIndex, id::Int)::Vector{Float32}
+    #convert from 1-based to 0-based
+    internal_id = id - 1
+
+    if internal_id < 0 || internal_id >= index.num_points
+        error("Invalid ID: $id. (Internal ID: $internal_id out of range.)")
+    end
+    if internal_id in index.freelist
+        error("ID $id refers to a deleted node.")
+    end
+    
+    return copy(index.vecs[:, internal_id+1])
+end
+
+"""
+    get_embedding_from_key(index::LMDiskANNIndex, key::String) -> Union{Vector{Float32}, Nothing}
+
+ARgument is a **string key** (which was stored during `insert!(..., key=...)`),
+look up the 1-based ID from the forward DB, then retrieve the embedding.
+
+Throws an error if the key doesn't exist
+"""
+function get_embedding_from_key(index::LMDiskANNIndex, key::String)::Vector{Float32}
+    if index.id_mapping_forward === nothing
+        error("No forward LevelDB is open in this index, can't lookup by key.")
+    end
+    
+    id_ = get_id_from_key(index.id_mapping_forward, key)
+
+    if id_ === nothing
+        error("Key '$key' not found in forward DB.")
+    end
+    
+    return get_embedding_from_id(index, id_)
+end
+
+
 
 end # module
