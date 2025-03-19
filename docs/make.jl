@@ -4,7 +4,6 @@ using Documenter
 DocMeta.setdocmeta!(LMDiskANN, :DocTestSetup, :(using LMDiskANN); recursive=true)
 
 makedocs(;
-    modules=[LMDiskANN],
     authors="Alexander V. Mantzaris",
     sitename="LMDiskANN.jl",
     format=Documenter.HTML(;
