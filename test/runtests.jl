@@ -146,7 +146,7 @@ end
         @test index.num_points == 0
         @test index.entrypoint == -1
         
-        # Check that the DBs are open
+        #see if the DBs are open
         @test index.id_mapping_forward !== nothing
         @test index.id_mapping_reverse !== nothing
     end
@@ -154,23 +154,23 @@ end
     @testset "Insertion and Search" begin
         vec1 = rand(Float32, 4)
         (genkey, id1) = ann_insert!(index, vec1)
-        @test id1 == 1  # first insertion => 1-based ID is 1
+        @test id1 == 1  #see first insertion => 1-based ID is 1
         @test index.num_points == 1
         
-        # Insert a second vector with a custom key
+        #insert a second vector with a custom key
         vec2 = rand(Float32, 4)
         (key2, id2) = ann_insert!(index, vec2; key="my_key")
         @test id2 == 2
         @test key2 == "my_key"
         @test index.num_points == 2
         
-        # basic adjacency or BFS check is trivial with only 2 vectors
-        # but we can at least do a quick search
+        #basic adjacency or BFS check is trivial with only 2 vectors
+        #do a quick search
         results = search(index, vec1, topk=2)
-        # Expect to see something like [(maybeNothing, 1), (maybeNothingOrKey, 2)]
+        #see something like [(maybeNothing, 1), (maybeNothingOrKey, 2)]
         @test length(results) <= 2
         
-        # Retrieve embedding
+        #get/retrieve embedding
         emb1 = get_embedding_from_id(index, id1)
         @test emb1 == vec1
         
@@ -178,31 +178,200 @@ end
         @test emb2 == vec2
     end
     
-    # 4) Deletion
+    # deletion
     @testset "Deletion" begin
-        # Delete the second vector by key
+        #delete the second vector by key
         ann_delete!(index, "my_key")
         
-        # Now searching for it should not return it
+        #now searching for it should not return it
         results = search(index, vec2, topk=2)
-        # Expect not to find "my_key"
-        # In a minimal scenario, we might just check that we didn't get 2 results
+        #expect not to find "my_key"
         @test all(r[2] != 2 for r in results)
         
-        # Try to retrieve embedding by key => error or fail
+        # try to get/retrieve embedding by key => error or fail
         try
             get_embedding_from_key(index, "my_key")
-            @test false  # if we got here, it didn't throw
+            @test false
         catch e
             @test e isa ErrorException  # or KeyError
         end
         
-        # The first vector should still be present
+        #first vector should still be present
         results = search(index, emb1, topk=1)
         @test length(results) == 1
         @test results[1][2] == 1
     end
     
     @info "All minimal tests passed."
+    clean_up()
+end
+
+
+
+
+@testset "Integration Tests for LMDiskANN" begin
+    clean_up()
+
+    index_prefix = "temp_test_index_integration"
+    dim = 5
+
+    index = createIndex(index_prefix, dim)
+    @test index.dim == dim
+    @test index.num_points == 0
+    @test index.entrypoint == -1
+    @test index.id_mapping_forward !== nothing
+    @test index.id_mapping_reverse !== nothing
+    
+    num_vectors = 10
+
+    vectors = Vector{Vector{Float32}}(undef, num_vectors)
+    assigned_keys = Vector{Union{String,Nothing}}(undef, num_vectors)
+    assigned_ids  = Vector{Int}(undef, num_vectors)
+
+    for i in 1:num_vectors
+        vec = rand(Float32, dim)
+        vectors[i] = vec
+        if isodd(i)
+            # use no key, store the auto-generated
+            assigned_keys[i], assigned_ids[i] = ann_insert!(index, vec)
+        else
+            #give it a user key
+            user_key = "vec_$(i)"
+            assigned_keys[i], assigned_ids[i] = ann_insert!(index, vec; key=user_key)
+        end
+    end
+    @test index.num_points == num_vectors
+    #"entrypoint" should be >= 0 now
+    @test index.entrypoint >= 0
+    
+    #see that each inserted vector can be found via search
+    @testset "Search Each Inserted Vector" begin
+        for i in 1:num_vectors
+            # search for the vector with topk=3
+            results = search(index, vectors[i], topk=3)
+            #results is a vector of (key, id) pairs, expect that the id we inserted is in those top results, since its the same vector
+            #check the presence of assigned_ids[i]
+            found_my_id = any(r[2] == assigned_ids[i] for r in results)
+            @test found_my_id == true
+        end
+    end
+    
+    @testset "Embedding Retrieval" begin
+        for i in 1:num_vectors
+            #ID stored
+            current_id = assigned_ids[i]
+            #vector we originally inserted
+            original_vec = vectors[i]
+            
+            retrieved_vec_id = get_embedding_from_id(index, current_id)
+            @test retrieved_vec_id == original_vec
+            
+            #a key (i.e. even i's in this example)
+            if !(assigned_keys[i] isa Nothing)
+                #retrieve by key
+                retrieved_vec_key = get_embedding_from_key(index, assigned_keys[i])
+                @test retrieved_vec_key == original_vec
+            end
+        end
+    end
+    
+    #deletion of some subset
+    #delete half of them (the odd ones) by ID, and the even ones by key
+    @testset "Deletion Checks" begin
+        for i in 1:num_vectors
+            if isodd(i)
+                # delete by ID
+                ann_delete!(index, assigned_ids[i])  # 1-based ID
+            else
+                # even => delete by key
+                if !(assigned_keys[i] isa Nothing)
+                    ann_delete!(index, assigned_keys[i])
+                else
+                    #Nothing, skip or do ID
+                    ann_delete!(index, assigned_ids[i])
+                end
+            end
+        end
+        
+        
+        for i in 1:num_vectors
+            #searching for the vector should not produce it
+            results = search(index, vectors[i], topk=3)
+            @test !any(r[2] == assigned_ids[i] for r in results)
+            
+            #try retrieving the embedding, it should error
+            try
+                get_embedding_from_id(index, assigned_ids[i])
+                @test false  #not good here
+            catch e
+                #expect an error
+                @test true
+            end
+        end
+    end
+    
+    @info "Integration tests completed for LMDiskANN with $num_vectors vectors."
+    clean_up()
+end
+
+
+
+
+
+function brute_force_topk(query_vec::Vector{Float32}, all_vecs::Vector{Vector{Float32}}, k::Int)
+    #return the indices (1-based) of the top-k nearest neighbors to query_vec
+    dist_id_pairs = [(norm(query_vec .- all_vecs[i]), i) for i in 1:length(all_vecs)]
+    sort!(dist_id_pairs, by = x->x[1])  # ascending distance
+    return [p[2] for p in dist_id_pairs[1:k]]
+end
+
+@testset "LMDiskANN Larger-Scale with Recall" begin
+    clean_up()
+
+    base_path = "temp_lmdiskann_2000vecs"
+    dim = 100
+    index = createIndex(base_path, dim)
+    
+    num_vectors = 2000
+    all_vectors = [rand(Float32, dim) for _ in 1:num_vectors]
+    
+    @info "Inserting $num_vectors vectors..."
+    for i in 1:num_vectors
+        ann_insert!(index, all_vectors[i])
+    end
+    @test index.num_points == num_vectors
+    
+    num_queries = 30
+    query_ids = rand(1:num_vectors, num_queries)
+    top_k = 10
+    
+    
+    total_recall = 0.0
+    @testset "Approximate Recall Checks" begin
+        for (qi, qid) in enumerate(query_ids)
+            query_vec = all_vectors[qid]
+            #true top-k
+            ground_truth = brute_force_topk(query_vec, all_vectors, top_k)
+            
+            #approximate top-k (ann search returns vector of (key, id))
+            ann_results = search(index, query_vec, topk=top_k)
+            
+            ann_ids = [res[2] for res in ann_results]
+            
+            #measure recall -> fraction of overlap in the top-k sets
+            overlap = intersect(Set(ground_truth), Set(ann_ids))
+            recall = length(overlap) / top_k
+            
+            @info "Query $qi (vector $qid) => recall=$(round(recall, digits=3))"
+            total_recall += recall
+        end
+    end
+    
+    avg_recall = total_recall / num_queries
+    @info "Average recall over $num_queries queries = $(round(avg_recall, digits=3))"
+    @test avg_recall > 0.7
+    
+    
+    @info "Larger-scale test with $num_vectors vectors, dimension=$dim completed."
     clean_up()
 end
