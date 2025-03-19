@@ -4,6 +4,7 @@ authors = ["Alexander V. Mantzaris"]
 version = "1.0.0-DEV"
 
 [deps]
+Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
 LevelDB2 = "002418b5-1437-4398-8918-fc420664f8a4"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"

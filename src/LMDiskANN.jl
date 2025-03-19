@@ -4,6 +4,9 @@ using Mmap
 using Random
 using LinearAlgebra
 using Serialization
+using LevelDB2
+using Distances
+
 
 include("UserIdMapping.jl")
 export open_databases, close_databases, insert_key!, get_id_from_key, get_key_from_id, delete_by_key!, delete_by_id!, count_entries, clear_database!, clear_all_databases!, list_all_keys
@@ -31,6 +34,8 @@ Fields:
 - `num_points`: Current number of points in the index
 - `freelist`: List of deleted IDs that can be reused
 - `entrypoint`: Entry point for graph search
+- `id_mapping_forward`: Optional LevelDB for string key -> internal ID mapping
+- `id_mapping_reverse`: Optional LevelDB for internal ID -> string key mapping
 """
 mutable struct LMDiskANNIndex
     vecfile::String #path to vectors file
@@ -49,6 +54,11 @@ mutable struct LMDiskANNIndex
     
     #entry point (for graph search)
     entrypoint::Int
+
+    #the user key to internal node id
+    id_mapping_forward::Union{LevelDB2.DB, Nothing}
+    #internal node id to user key
+    id_mapping_reverse::Union{LevelDB2.DB, Nothing}
 end
 
 
@@ -169,8 +179,9 @@ end
 Compute Euclidean distance between two vectors x and y.
 """
 @inline function _compute_distance(x::AbstractVector{Float32}, y::AbstractVector{Float32})
-    return norm(x .- y)
+    return evaluate(Euclidean(), x, y) #norm(x .- y)
 end
+
 
 """
     _get_neighbors(index, node_id) -> Vector{Int}
@@ -245,12 +256,17 @@ function createIndex(path_prefix::String, dim::Int; maxdegree::Int=DEFAULT_MAX_D
     
     #create initial memory maps (empty at this point)
     vec_mmap, adj_mmap = _mmap_arrays(vecfile, adjfile, dim, maxdegree, max(1, num_points))
+
+    forward_path = path_prefix + "forward_db.leveldb"
+    reverse_path = path_prefix + "reverse_db.leveldb"
+    db_forward, db_reverse = open_databases(forward_path, reverse_path; create_if_missing=true)
     
     return LMDiskANNIndex(vecfile, adjfile, metafile,
                           dim_, maxdegree_,
                           vec_mmap, adj_mmap,
                           num_points, freelist,
-                          entrypoint)
+                          entrypoint,
+                          db_forward, db_reverse)
 end
 
 """
@@ -273,9 +289,12 @@ function loadIndex(path_prefix::String)
     vecfile  = path_prefix * ".vec"
     adjfile  = path_prefix * ".adj"
     metafile = path_prefix * ".meta"
+
+    forward_file = path_prefix + "forward_db.leveldb"
+    reverse_file = path_prefix + "reverse_db.leveldb"
     
     #check if files exist
-    if !isfile(vecfile) || !isfile(adjfile) || !isfile(metafile)
+    if !isfile(vecfile) || !isfile(adjfile) || !isfile(metafile) || !isfile(forward_file) || !isfile(reverse_file)
         error("Index files not found at prefix: $path_prefix")
     end
     
@@ -284,12 +303,15 @@ function loadIndex(path_prefix::String)
     
     #memory-map the files
     vec_mmap, adj_mmap = _mmap_arrays(vecfile, adjfile, dim, maxdegree, max(1, num_points))
+
+    db_forward, db_reverse = open_databases(forward_file, reverse_file; create_if_missing=false)
     
     return LMDiskANNIndex(vecfile, adjfile, metafile,
                           dim, maxdegree,
                           vec_mmap, adj_mmap,
                           num_points, freelist,
-                          entrypoint)
+                          entrypoint,
+                          db_forward, db_reverse)
 end
 
 """
@@ -430,7 +452,7 @@ Returns top-k approximate nearest neighbors for query_vec.
 - `topk::Int=10`: Number of nearest neighbors to return
 
 # Returns
-- `Vector{Int}`: IDs of the top-k nearest neighbors
+- `Tuple (key,id)`: Keys and IDs of the top-k nearest neighbors (string, int)
 
 # Example
 ```julia
@@ -459,7 +481,12 @@ function search(index::LMDiskANNIndex, query_vec::AbstractVector{Float32}; topk:
     
     # 3 return top-k
     k = min(topk, length(dist_id_pairs))
-    return [id+1 for (_, id) in dist_id_pairs[1:k]] #return +1 for julia 1 based index
+    results = Vector{Tuple{Int, Union{String,Nothing}}}()
+    for (dist, cid) in dist_id_pairs[1:k]
+        user_key = get_key_from_id(index.id_mapping_reverse, cid+1)
+        push!(results, (user_key, cid+1))
+    end
+    return results
 end
 
 
@@ -504,15 +531,17 @@ Implements Algorithm 2 from the LM-DiskANN paper.
 - `index::LMDiskANNIndex`: The index to insert into
 - `new_vec::Vector{Float32}`: The vector to insert
 
+# Optional Arguments
+- `key`:: String: the key the user wants to associate with the new vector
 # Returns
-- `Int`: The ID assigned to the inserted vector
+- `(key,Int)`: The tuple of the key (string) and ID (int) assigned to the inserted vector
 
 # Example
 ```julia
-id = LMDiskANN.insert!(index, vector)
+(key,id) = LMDiskANN.insert!(index, vector)
 ```
 """
-function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32})
+function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32}; key::Union{nothing,String}=nothing)
     
     # 1 determine new ID
     new_id = 0
@@ -552,7 +581,7 @@ function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32})
     #search for nearest neighbors to connect to
     query = convert(Vector{Float32}, new_vec)
     # nearest_neighbors = search(index, query, topk=index.maxdegree)
-    nearest_neighbors_1based = search(index, query, topk=index.maxdegree)
+    nearest_neighbors_1based = [res[2] for res in search(index, query, topk=index.maxdegree)]
     nearest_neighbors_0based = [nbr_id - 1 for nbr_id in nearest_neighbors_1based]
     
     # 5 set neighbors of new node
@@ -575,8 +604,15 @@ function insert!(index::LMDiskANNIndex, new_vec::Vector{Float32})
     
     # 7 Save updated metadata
     saveIndex(index)
-    
-    return new_id+1 # return 1 based for julia
+
+    if isnothing(key) == false
+        insert_key!(index.id_mapping_forward, index.id_mapping_reverse, key, new_id+1)
+        return (key, new_id+1)
+    else
+        insert_key!(index.id_mapping_forward, index.id_mapping_reverse, string(new_id+1), new_id+1)
+        return (string(new_id+1),new_id+1)
+    end
+
 end
 
 """
@@ -597,9 +633,17 @@ Implements Algorithm 3 from the LM-DiskANN paper.
 LMDiskANN.delete!(index, id)
 ```
 """
-function delete!(index::LMDiskANNIndex, node_id::Int)
+function delete!(index::LMDiskANNIndex, node_id::Union{Int,String})
+
+    if node_id isa String
+        node_id = get_id_from_key(index.id_mapping_forward,node_id)
+        if node_id == nothing
+            return nothing
+        end
+    end
+    node_id += -1  # make 0-based
+
     # 1 safety checks
-    node_id += -1 #make zero based for here
     if node_id < 0 || node_id >= index.num_points
         error("Invalid node_id: $node_id")
     end
@@ -645,6 +689,8 @@ function delete!(index::LMDiskANNIndex, node_id::Int)
     
     # 8 update metadata
     saveIndex(index)
+
+    delete_by_id!(index.id_mapping_forward, index.id_mapping_reverse, node_id)
     
     return nothing
 end
