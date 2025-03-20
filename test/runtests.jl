@@ -464,3 +464,93 @@ end
 
     clean_up()
 end
+
+
+
+@testset "LMDiskANN Parametric Type Tests" begin
+    clean_up()
+
+    @testset "Default Float32" begin
+        index_prefix_32 = "temp_param_index32"
+        dim = 4
+        index32 = createIndex(index_prefix_32, dim)
+
+        vec1_32 = rand(Float32, dim)
+        (key1, id1) = ann_insert!(index32, vec1_32)
+        @test index32.num_points == 1
+        @test typeof(index32.vecs) == Array{Float32,2}
+
+        results32 = search(index32, vec1_32, topk=1)
+        @test length(results32) == 1
+        @test results32[1][2] == id1
+
+        retrieved_32 = get_embedding_from_id(index32, id1)
+        @test retrieved_32 == vec1_32
+    end
+
+    @testset "Float64 Param" begin
+        clean_up()
+
+        index_prefix_64 = "temp_param_index64"
+        dim = 4
+        index64 = createIndex(index_prefix_64, dim; T=Float64)
+
+        #check underlying array type
+        @test typeof(index64.vecs) == Array{Float64,2}
+
+        # insert a vector in Float64
+        vec1_64 = rand(Float64, dim)
+        (key64, id64) = ann_insert!(index64, vec1_64)
+        @test index64.num_points == 1
+
+        # insert a vector in Float16 (will be converted to Float64 internally)
+        vec2_16 = rand(Float16, dim)
+        (key16, id16) = ann_insert!(index64, vec2_16)
+        @test index64.num_points == 2
+
+        # search for vec1_64
+        results64 = search(index64, vec1_64, topk=2)
+        @test length(results64) <= 2
+        found_id64 = any(r[2] == id64 for r in results64)
+        @test found_id64 == true
+
+        # get the second vector
+        retrieved_2 = get_embedding_from_id(index64, id16)
+        @test length(retrieved_2) == dim
+        #check type
+        @test typeof(retrieved_2) == Vector{Float64}
+
+        # confirm approximate equality to original (converted from Float16 to Float64)
+        for i in 1:dim
+            @test isapprox(retrieved_2[i], Float64(vec2_16[i]), atol=1e-7)
+        end
+    end
+
+    @testset "Float16 Param (Careful with precision)" begin
+        # create an index with T=Float16
+        clean_up()
+
+        index_prefix_16 = "temp_param_index16"
+        dim = 4
+        index16 = createIndex(index_prefix_16, dim; T=Float16)
+
+        #check underlying array type
+        @test typeof(index16.vecs) == Array{Float16,2}
+
+        # insert a vector in Float64 => it will be converted to Float16
+        vec1_64 = rand(Float64, dim)
+        (k16, i16) = ann_insert!(index16, vec1_64)
+        @test index16.num_points == 1
+
+        # retrieve it
+        retrieved_16 = get_embedding_from_id(index16, i16)
+        @test typeof(retrieved_16) == Vector{Float16}
+        @test length(retrieved_16) == dim
+        #  check approximate equality within Float16 precision
+        for i in 1:dim
+            @test isapprox(Float64(retrieved_16[i]), vec1_64[i], atol=1e-2)
+        end
+    end
+
+    clean_up()
+end
