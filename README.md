@@ -15,7 +15,8 @@ Julia Implementation of Low Memory Disk ANN (LM-DiskANN)
 
 ## Quick Start Example
 
-install via; `] add LMDiskANN`
+
+Install via: `(@v1.9) pkg> add https://github.com/mantzaris/LMDiskANN.jl`
 
 ```julia
 using LMDiskANN
