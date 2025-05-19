@@ -64,18 +64,18 @@ end
 
 """
     _read_metadata(metafile::String)
-Reads metadata (num_points, dim, maxdegree, freelist, entrypoint) via Serialization.
+Reads metadata (num_points, dim, maxdegree, freelist, entrypoint, eltype) via Serialization.
 """
 function _read_metadata(metafile::String)
     open(metafile, "r") do io
         md = deserialize(io)
-        return md["num_points"], md["dim"], md["maxdegree"], md["freelist"], md["entrypoint"]
+        return md["num_points"], md["dim"], md["maxdegree"], md["freelist"], md["entrypoint"], get(md, "eltype", "Float32")
     end
 end
 
 
 """
-    _write_metadata(metafile::String, num_points, dim, maxdegree, freelist, entrypoint)
+    _write_metadata(metafile::String, num_points::Int, dim::Int, maxdegree::Int, freelist::Vector{Int}, entrypoint::Int, T::Type)
 
 Writes metadata to a `.meta` file using Julia's Serialization.
 """
@@ -84,13 +84,15 @@ function _write_metadata(metafile::String,
                          dim::Int,
                          maxdegree::Int,
                          freelist::Vector{Int},
-                         entrypoint::Int)
+                         entrypoint::Int,
+                         T::Type = Float32)
     md = Dict(
         "num_points" => num_points,
         "dim"        => dim,
         "maxdegree"  => maxdegree,
         "freelist"   => freelist,
-        "entrypoint" => entrypoint
+        "entrypoint" => entrypoint,
+        "eltype"     => string(T)
     )
     open(metafile, "w") do io
         serialize(io, md)
@@ -152,7 +154,7 @@ end
 
 
 """
-    _init_files(vecfile, adjfile, metafile, dim)
+    _init_files(vecfile, adjfile, metafile, dim, maxdegree, T)
 
 Initializes (or overwrites) new files for a fresh index with no points.
 """
@@ -160,12 +162,13 @@ function _init_files(vecfile::String,
                      adjfile::String,
                      metafile::String;
                      dim::Int,
-                     maxdegree::Int=DEFAULT_MAX_DEGREE)
+                     maxdegree::Int=DEFAULT_MAX_DEGREE,
+                     T::Type = Float32)
     num_points = 0
     freelist   = Int[]
     entrypoint = -1
 
-    _write_metadata(metafile, num_points, dim, maxdegree, freelist, entrypoint)
+    _write_metadata(metafile, num_points, dim, maxdegree, freelist, entrypoint, T)
     
     open(vecfile, "w") do f end
     open(adjfile, "w") do f end
@@ -211,7 +214,7 @@ end
 
 
 """
-    create_index(path_prefix::String, dim::Int; maxdegree::Int=DEFAULT_MAX_DEGREE, metric::PreMetric=Euclidean())
+    create_index(path_prefix::String, dim::Int; T::Type=Float32, maxdegree::Int=DEFAULT_MAX_DEGREE, metric::PreMetric=Euclidean())
 
 Creates a brand new LM-DiskANN index on disk with the given dimension, storing
 to files: `path_prefix.vec`, `path_prefix.adj`, `path_prefix.meta`.
@@ -241,8 +244,8 @@ function create_index(path_prefix::String, dim::Int;
     adjfile  = path_prefix * ".adj"
     metafile = path_prefix * ".meta"
 
-    _init_files(vecfile, adjfile, metafile; dim=dim, maxdegree=maxdegree)
-    num_points, dim_, maxdegree_, freelist, entrypoint = _read_metadata(metafile)
+    _init_files(vecfile, adjfile, metafile; dim=dim, maxdegree=maxdegree, T=T)
+    num_points, dim_, maxdegree_, freelist, entrypoint, _ = _read_metadata(metafile)
     
     vec_mmap, adj_mmap = _mmap_arrays(vecfile, adjfile, dim_, maxdegree_,
                                       max(1, num_points); T=T)
@@ -261,10 +264,11 @@ function create_index(path_prefix::String, dim::Int;
 end
 
 """
-    load_index(path_prefix::String; T=Float32, metric::PreMetric=Euclidean())
-Loads an existing index, specifying T if it wasn't Float32 originally. You can also specify the metric which is by default Euclidean from Distances.jl
+    load_index(path_prefix::String; metric::PreMetric=Euclidean())
+Loads an existing index,  `eltype` and the original metric are read from the
+meta-file automatically. You can also specify the metric which is by default Euclidean from Distances.jl
 """
-function load_index(path_prefix::String; T::Type=Float32, metric::PreMetric=Euclidean())
+function load_index(path_prefix::String; metric::PreMetric=Euclidean())
     vecfile  = path_prefix * ".vec"
     adjfile  = path_prefix * ".adj"
     metafile = path_prefix * ".meta"
@@ -272,12 +276,20 @@ function load_index(path_prefix::String; T::Type=Float32, metric::PreMetric=Eucl
     forward_file = path_prefix * "forward_db.leveldb"
     reverse_file = path_prefix * "reverse_db.leveldb"
     
-    if !(isfile(vecfile) && isfile(adjfile) && isfile(metafile) &&
-         isfile(forward_file) && isfile(reverse_file))
+    # if !(isfile(vecfile) && isfile(adjfile) && isfile(metafile) &&
+    #      isfile(forward_file) && isfile(reverse_file))
+    #     error("Index files not found at prefix: $path_prefix")
+    # end
+    has_path(p) = isfile(p) || isdir(p)          # accept file or directory
+
+    if !( isfile(vecfile) && isfile(adjfile) && isfile(metafile) &&
+        has_path(forward_file) && has_path(reverse_file) )
         error("Index files not found at prefix: $path_prefix")
     end
     
-    num_points, dim_, maxdeg_, freelist, entrypoint = _read_metadata(metafile)
+    num_points, dim_, maxdeg_, freelist, entrypoint, Tstr = _read_metadata(metafile)
+
+    T = eval(Meta.parse(Tstr))
     
     vec_mmap, adj_mmap = _mmap_arrays(vecfile, adjfile, dim_, maxdeg_,
                                       max(1, num_points); T=T)
@@ -342,7 +354,8 @@ function save_index(index::LMDiskANNIndex{T}) where {T<:AbstractFloat}
                     index.dim,
                     index.maxdegree,
                     index.freelist,
-                    index.entrypoint)
+                    index.entrypoint,
+                    T)
     return index
 end
 

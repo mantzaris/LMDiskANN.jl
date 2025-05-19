@@ -24,8 +24,6 @@ end
 
 
 
-
-
 @testset "Metric Parameterisation" begin
     clean_up()
 
@@ -70,6 +68,40 @@ end
 
     clean_up()
 end
+
+
+
+@testset "Element-type configuration" begin
+    clean_up()
+
+    for (tag, T) in (("32", Float32), ("16", Float16), ("64", Float64))
+        prefix = "temp_tidx" * tag
+
+        # create index with appropriate element type
+        idx = (T === Float32) ?
+              create_index(prefix, 4) :
+              create_index(prefix, 4; T = T)
+
+        @test eltype(idx.vecs) == T
+        ann_insert!(idx, rand(T, 4))
+
+        # flush and close so LevelDB directories are written
+        LMDiskANN.save_index(idx)
+        LMDiskANN.close_id_mapping(idx)
+
+        # reload  element type should be detected from the meta file
+        idx2 = load_index(prefix)
+        @test eltype(idx2.vecs) == T
+    end
+
+    clean_up()
+end
+
+
+
+
+
+
 
 
 
