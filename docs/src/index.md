@@ -63,7 +63,7 @@ end
 ```
 
 
-### Example real data embeddings from GLoVe
+### Example real data embeddings from GLoVe and usage
 
 Build a 10 000-word cosine LM-DiskANN index and explore semantic neighbours using embedding vectors from GLoVe.
 
