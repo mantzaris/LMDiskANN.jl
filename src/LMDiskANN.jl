@@ -35,7 +35,7 @@ Fields:
 - `num_points`: Current number of points
 - `freelist`: List of deleted IDs
 - `entrypoint`: Graph entry point
-- `id_mapping_forward`, `id_mapping_reverse`: Optional LevelDB for user key ↔ ID
+- `id_mapping_forward`, `id_mapping_reverse`: Optional LevelDB for user key to and from ID
 """
 mutable struct LMDiskANNIndex{T<:AbstractFloat}
     vecfile::String
@@ -54,7 +54,13 @@ mutable struct LMDiskANNIndex{T<:AbstractFloat}
 
     id_mapping_forward::Union{LevelDB2.DB{String,String},Nothing}
     id_mapping_reverse::Union{LevelDB2.DB{String,String},Nothing}
+
+    metric::PreMetric
 end
+
+
+@inline _dist(index, x, y) = evaluate(index.metric, x, y)   #distance helper
+
 
 """
     _read_metadata(metafile::String)
@@ -165,14 +171,7 @@ function _init_files(vecfile::String,
     open(adjfile, "w") do f end
 end
 
-# """
-#     _compute_distance(x, y)
 
-# Compute Euclidean distance for T=Float32 (the default param).
-# """
-# @inline function _compute_distance(x::AbstractVector{Float32}, y::AbstractVector{Float32})
-#     return evaluate(Euclidean(), x, y)
-# end
 
 
 """
@@ -212,7 +211,7 @@ end
 
 
 """
-    create_index(path_prefix::String, dim::Int; maxdegree::Int=DEFAULT_MAX_DEGREE)
+    create_index(path_prefix::String, dim::Int; maxdegree::Int=DEFAULT_MAX_DEGREE, metric::PreMetric=Euclidean())
 
 Creates a brand new LM-DiskANN index on disk with the given dimension, storing
 to files: `path_prefix.vec`, `path_prefix.adj`, `path_prefix.meta`.
@@ -224,6 +223,7 @@ to files: `path_prefix.vec`, `path_prefix.adj`, `path_prefix.meta`.
 # Optional arguments
 = `T::Type=Float32`: the typer for the embedding vectors
 - `maxdegree::Int=DEFAULT_MAX_DEGREE`: Maximum number of neighbors per node
+- `metric`::PreMetric which is default Euclidean but can be a metric from Distances.jl
 
 # Returns
 - `LMDiskANNIndex`: A new index instance
@@ -235,7 +235,8 @@ index = LMDiskANN.create_index("my_index", 128)
 """
 function create_index(path_prefix::String, dim::Int;
                      T::Type=Float32,
-                     maxdegree::Int=DEFAULT_MAX_DEGREE)
+                     maxdegree::Int=DEFAULT_MAX_DEGREE,
+                     metric::PreMetric=Euclidean())
     vecfile  = path_prefix * ".vec"
     adjfile  = path_prefix * ".adj"
     metafile = path_prefix * ".meta"
@@ -255,14 +256,15 @@ function create_index(path_prefix::String, dim::Int;
                              vec_mmap, adj_mmap,
                              num_points, freelist,
                              entrypoint,
-                             db_forward, db_reverse)
+                             db_forward, db_reverse,
+                             metric)
 end
 
 """
-    load_index(path_prefix::String; T=Float32)
-Loads an existing index, specifying T if it wasn't Float32 originally.
+    load_index(path_prefix::String; T=Float32, metric::PreMetric=Euclidean())
+Loads an existing index, specifying T if it wasn't Float32 originally. You can also specify the metric which is by default Euclidean from Distances.jl
 """
-function load_index(path_prefix::String; T::Type=Float32)
+function load_index(path_prefix::String; T::Type=Float32, metric::PreMetric=Euclidean())
     vecfile  = path_prefix * ".vec"
     adjfile  = path_prefix * ".adj"
     metafile = path_prefix * ".meta"
@@ -287,7 +289,8 @@ function load_index(path_prefix::String; T::Type=Float32)
                              vec_mmap, adj_mmap,
                              num_points, freelist,
                              entrypoint,
-                             db_forward, db_reverse)
+                             db_forward, db_reverse,
+                             metric)
 end
 
 
@@ -375,7 +378,7 @@ function _search_graph(index::LMDiskANNIndex{T}, query_vec::Vector{T}, ef::Int) 
 
     entry_id   = index.entrypoint
     entry_vec  = index.vecs[:, entry_id+1]
-    entry_dist = evaluate(Euclidean(), entry_vec, query_vec)  
+    entry_dist = _dist(index, entry_vec, query_vec) #evaluate(Euclidean(), entry_vec, query_vec)  
 
     push!(visited, entry_id)
     push!(candidates, (entry_dist, entry_id))
@@ -397,7 +400,7 @@ function _search_graph(index::LMDiskANNIndex{T}, query_vec::Vector{T}, ef::Int) 
             push!(visited, nbr_id)
 
             nbr_vec = index.vecs[:, nbr_id+1]
-            nbr_dist= evaluate(Euclidean(), nbr_vec, query_vec)
+            nbr_dist = _dist(index, nbr_vec, query_vec)  #evaluate(Euclidean(), nbr_vec, query_vec)
 
             sort!(results, by=x->x[1])
             if length(results) < ef || nbr_dist < last(results)[1]
@@ -447,7 +450,7 @@ function search(index::LMDiskANNIndex{T},
     dist_id_pairs = Vector{Tuple{T,Int}}()
     for cid in ef_candidates
         v = index.vecs[:, cid+1]
-        d = evaluate(Euclidean(), v, local_q)
+        d = _dist(index, v, local_q)  #evaluate(Euclidean(), v, local_q)
         push!(dist_id_pairs, (d, cid))
     end
     sort!(dist_id_pairs, by=x->x[1])
@@ -479,7 +482,7 @@ function _prune_neighbors(index::LMDiskANNIndex{T}, node_id::Int, candidates::Ve
     dist_id_pairs = Vector{Tuple{T,Int}}()
     for cand_id in candidates
         cand_vec = index.vecs[:, cand_id+1]
-        d = evaluate(Euclidean(), node_vec, cand_vec)
+        d = _dist(index, node_vec, cand_vec)  #evaluate(Euclidean(), node_vec, cand_vec)
         push!(dist_id_pairs, (d, cand_id))
     end
     sort!(dist_id_pairs, by=x->x[1])

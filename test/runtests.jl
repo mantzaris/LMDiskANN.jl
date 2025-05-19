@@ -3,6 +3,7 @@ using Test
 
 using Random
 using LinearAlgebra
+using Distances
 
 Random.seed!(1)
 
@@ -20,6 +21,55 @@ function clean_up()
     end
 end
 
+
+
+
+
+
+@testset "Metric Parameterisation" begin
+    clean_up()
+
+    # Euclidean test
+    @testset "Default metric is Euclidean" begin
+        idx_default = create_index("temp_metric_default", 4)
+        @test idx_default.metric isa Euclidean
+    end
+
+    # cosine test
+    @testset "Cosine distance end-to-end" begin
+        dim      = 32
+        nvecs    = 500
+        topk     = 10
+        nqueries = 20
+        cosine   = CosineDist()
+
+        idx_cos = create_index("temp_metric_cosine", dim; metric = cosine)
+
+        vecs = [rand(Float32, dim) for _ in 1:nvecs]
+        foreach(v -> ann_insert!(idx_cos, v), vecs)
+
+        @test idx_cos.num_points == nvecs
+        @test idx_cos.metric === cosine
+
+        # recall check
+        total_recall = 0.0
+        for q in rand(vecs, nqueries)
+            bf = sortperm([evaluate(cosine, q, v) for v in vecs])[1:topk]
+            ann_ids = [r[2] for r in search(idx_cos, q, topk = topk)]
+            total_recall += length(intersect(Set(bf), Set(ann_ids))) / topk
+        end
+        avg = total_recall / nqueries
+        @info "Average cosine recall = $(round(avg, digits = 3))"
+        @test avg ≥ 0.70
+        #  
+
+        # flush and close so clean_up() can delete the files
+        LMDiskANN.save_index(idx_cos)
+        close_id_mapping(idx_cos)
+    end
+
+    clean_up()
+end
 
 
 
@@ -554,3 +604,6 @@ end
 
     clean_up()
 end
+
+
+
