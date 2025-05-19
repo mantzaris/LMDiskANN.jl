@@ -63,6 +63,64 @@ end
 ```
 
 
+### Example real data embeddings from GLoVe
+
+Build a 10 000-word cosine LM-DiskANN index and explore semantic neighbours using embedding vectors from GLoVe.
+
+```julia
+using Embeddings #downloads pre-trained vectors of word embeddings
+using LMDiskANN #this package added via, add https://github.com/mantzaris/LMDiskANN.jl
+using Distances, LinearAlgebra, Random, Printf
+
+tab = load_embeddings(GloVe{:en}, 2; max_vocab_size = 10_000)
+words = tab.vocab
+vectors = tab.embeddings #100 × 10 000 Float32
+(dim, N) = size(vectors)
+@info "Loaded $N by $dim GloVe vectors"
+
+word2id = Dict(w => i for (i, w) in enumerate(words)) #helper function
+vectors ./= sqrt.(sum(abs2, vectors; dims = 1)) #normalisation
+
+idx = create_index("glove_demo", dim; metric = CosineDist()) #<- create the store
+
+for (vec, w) in zip(eachcol(vectors), words)  #insert into the lmdiskann the (vector, word)
+    ann_insert!(idx, vec; key = w) #<- insert into the store
+end
+@info "Index built with $(idx.num_points) points"
+
+
+nearest(w; k = 5) = let id = word2id[w]
+    hits = search(idx, vectors[:, id], topk = k + 1) #<- search the store, first high result would be the word itself
+    [words[h[2]] for h in hits[2:end]]
+end
+
+for w in ("king", "queen", "paris", "cat", "coffee")
+           @printf("  %-6s -> %s\n", w, join(nearest(w), ", "))
+       end
+# prints eg:
+#  king   -> prince, queen, son, brother, monarch
+#  queen  -> princess, king, elizabeth, royal, lady
+#  paris  -> france, london, brussels, french, rome
+#  cat    -> dog, cats, pet, dogs, mouse
+#  coffee -> tea, drinks, beer, wine, drink
+
+#classic analogy for vectors
+
+v = vectors[:, word2id["king"]] .- vectors[:, word2id["man"]] .+ vectors[:, word2id["woman"]]
+v ./= norm(v) 
+
+
+ignore = Set(["king", "man", "woman"]) #skip seed words
+for (_key, id) in search(idx, v, topk = 10)
+    w = words[id]
+    w ∉ ignore && (println("king - man + woman -> ", w); break)
+end
+
+#prints:
+# king - man + woman -> queen
+```
+
+
 
 Documentation for [LMDiskANN](https://github.com/mantzaris/LMDiskANN.jl).
 
