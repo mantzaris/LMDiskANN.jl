@@ -6,7 +6,7 @@ CurrentModule = LMDiskANN
 
 **LM-DiskANN** is an approximate nearest‐neighbor indexing library that builds and maintains a disk‐resident graph structure for high‐dimensional data. It aims to provide a balance between fast search times, memory efficiency, and support for incremental updates (insertion and deletion). Under the hood, LM-DiskANN stores vector embeddings in memory‐mapped files, limiting in‐memory usage while preserving quick random access. It also leverages a graph-based BFS expansion to find candidate neighbors, with user‐configurable parameters like search expansion factor (`EF_SEARCH`) and maximum neighborhood size (`maxdegree`).
 
-*Pan, Y., Sun, J., & Yu, H. (2023, December). Lm-diskann: Low memory footprint in disk-native dynamic graph-based ann indexing. In 2023 IEEE International Conference on Big Data (BigData) (pp. 5987-5996). IEEE.*
+"LM-diskann: Low memory footprint in disk-native dynamic graph-based ann indexing." Pan, Yu, Jianxin Sun, and Hongfeng Yu, 2023 IEEE International Conference on Big Data (BigData). IEEE, 2023.
 
 It offers the *optional user‐key mapping*, allowing users to associate string keys with each embedding. This means you can insert vectors with a custom ID (e.g., "image001"), search for nearest neighbors, then retrieve or delete by either the numeric internal ID or the user key. The library includes utility functions to open, close, and clear these user‐key databases, enabling a more flexible integration with real-world applications where data might be identified by strings or external IDs.
 
@@ -25,7 +25,7 @@ using Random
 
 # 1 make an index with dimension 5
 dim = 5
-index = createIndex("example_index", dim)
+index = create_index("example_index", dim)
 
 # 2 insert a couple of random vectors
 vec1 = rand(Float32, 5)

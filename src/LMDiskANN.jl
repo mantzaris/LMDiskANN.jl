@@ -12,7 +12,7 @@ include("UserIdMapping.jl")
 export open_databases, close_databases, insert_key!, get_id_from_key, get_key_from_id
 export delete_by_key!, delete_by_id!, count_entries, clear_database!, clear_all_databases!, list_all_keys
 
-export createIndex, loadIndex, close_id_mapping, ann_insert!, ann_delete!, search
+export create_index, load_index, close_id_mapping, ann_insert!, ann_delete!, search
 export get_embedding_from_id, get_embedding_from_key
 
 const DEFAULT_MAX_DEGREE = 64  # max number of neighbors
@@ -165,14 +165,14 @@ function _init_files(vecfile::String,
     open(adjfile, "w") do f end
 end
 
-"""
-    _compute_distance(x, y)
+# """
+#     _compute_distance(x, y)
 
-Compute Euclidean distance for T=Float32 (the default param).
-"""
-@inline function _compute_distance(x::AbstractVector{Float32}, y::AbstractVector{Float32})
-    return evaluate(Euclidean(), x, y)
-end
+# Compute Euclidean distance for T=Float32 (the default param).
+# """
+# @inline function _compute_distance(x::AbstractVector{Float32}, y::AbstractVector{Float32})
+#     return evaluate(Euclidean(), x, y)
+# end
 
 
 """
@@ -212,7 +212,7 @@ end
 
 
 """
-    createIndex(path_prefix::String, dim::Int; maxdegree::Int=DEFAULT_MAX_DEGREE)
+    create_index(path_prefix::String, dim::Int; maxdegree::Int=DEFAULT_MAX_DEGREE)
 
 Creates a brand new LM-DiskANN index on disk with the given dimension, storing
 to files: `path_prefix.vec`, `path_prefix.adj`, `path_prefix.meta`.
@@ -230,10 +230,10 @@ to files: `path_prefix.vec`, `path_prefix.adj`, `path_prefix.meta`.
 
 # Example
 ```julia
-index = LMDiskANN.createIndex("my_index", 128)
+index = LMDiskANN.create_index("my_index", 128)
 ```
 """
-function createIndex(path_prefix::String, dim::Int;
+function create_index(path_prefix::String, dim::Int;
                      T::Type=Float32,
                      maxdegree::Int=DEFAULT_MAX_DEGREE)
     vecfile  = path_prefix * ".vec"
@@ -259,10 +259,10 @@ function createIndex(path_prefix::String, dim::Int;
 end
 
 """
-    loadIndex(path_prefix::String; T=Float32)
+    load_index(path_prefix::String; T=Float32)
 Loads an existing index, specifying T if it wasn't Float32 originally.
 """
-function loadIndex(path_prefix::String; T::Type=Float32)
+function load_index(path_prefix::String; T::Type=Float32)
     vecfile  = path_prefix * ".vec"
     adjfile  = path_prefix * ".adj"
     metafile = path_prefix * ".meta"
@@ -292,12 +292,12 @@ end
 
 
 """
-    resizeIndex!(index::LMDiskANNIndex{T}, new_size::Int) where {T<:AbstractFloat}
+    resize_index!(index::LMDiskANNIndex{T}, new_size::Int) where {T<:AbstractFloat}
 
 Resizes the memory-mapped files to accommodate at least new_size points.
 This is used internally when the index needs to grow.
 """
-function resizeIndex!(index::LMDiskANNIndex{T}, new_size::Int) where {T<:AbstractFloat}
+function resize_index!(index::LMDiskANNIndex{T}, new_size::Int) where {T<:AbstractFloat}
     vecfile = index.vecfile
     adjfile = index.adjfile
     dim     = index.dim
@@ -317,7 +317,7 @@ end
 
 
 """
-    saveIndex(index::LMDiskANNIndex{T}) where {T<:AbstractFloat}
+    save_index(index::LMDiskANNIndex{T}) where {T<:AbstractFloat}
 
 Saves the current state of the index metadata to disk.
 The vector and adjacency data are already on disk via memory mapping.
@@ -330,10 +330,10 @@ The vector and adjacency data are already on disk via memory mapping.
 
 # Example
 ```julia
-LMDiskANN.saveIndex(index)
+LMDiskANN.save_index(index)
 ```
 """
-function saveIndex(index::LMDiskANNIndex{T}) where {T<:AbstractFloat}
+function save_index(index::LMDiskANNIndex{T}) where {T<:AbstractFloat}
     _write_metadata(index.metafile,
                     index.num_points,
                     index.dim,
@@ -375,7 +375,7 @@ function _search_graph(index::LMDiskANNIndex{T}, query_vec::Vector{T}, ef::Int) 
 
     entry_id   = index.entrypoint
     entry_vec  = index.vecs[:, entry_id+1]
-    entry_dist = evaluate(Euclidean(), entry_vec, query_vec)  # or _compute_distance if you prefer
+    entry_dist = evaluate(Euclidean(), entry_vec, query_vec)  
 
     push!(visited, entry_id)
     push!(candidates, (entry_dist, entry_id))
@@ -522,7 +522,7 @@ function ann_insert!(index::LMDiskANNIndex{T},
     if needed_size > curr_cap
         growby = max(1024, curr_cap)
         new_cap= max(needed_size, curr_cap + growby)
-        resizeIndex!(index, new_cap)
+        resize_index!(index, new_cap)
     end
 
     local_vec = convert(Vector{T}, new_vec)
@@ -531,7 +531,7 @@ function ann_insert!(index::LMDiskANNIndex{T},
     if index.entrypoint < 0
         index.entrypoint = new_id
         _set_neighbors(index, new_id, Int[])
-        saveIndex(index)
+        save_index(index)
         if isnothing(key)
             insert_key!(index.id_mapping_forward, index.id_mapping_reverse,
                         string(new_id+1), new_id+1)
@@ -553,7 +553,7 @@ function ann_insert!(index::LMDiskANNIndex{T},
         pruned = _prune_neighbors(index, nbr_id, nbrs)
         _set_neighbors(index, nbr_id, pruned)
     end
-    saveIndex(index)
+    save_index(index)
 
     if isnothing(key)
         insert_key!(index.id_mapping_forward, index.id_mapping_reverse,
@@ -621,7 +621,7 @@ function ann_delete!(index::LMDiskANNIndex{T}, node_id::Union{Int,String}) where
 
     push!(index.freelist, local_id)
     index.vecs[:, local_id+1] .= zero(T)
-    saveIndex(index)
+    save_index(index)
 
     delete_by_id!(index.id_mapping_forward, index.id_mapping_reverse, node_id)
     return nothing

@@ -16,14 +16,14 @@ Julia Implementation of Low Memory Disk ANN (LM-DiskANN)
 ## Quick Start Example
 
 
-Install via: `(@v1.9) pkg> add https://github.com/mantzaris/LMDiskANN.jl`
+Install via: `(@v1.6) pkg> add https://github.com/mantzaris/LMDiskANN.jl`
 
 ```julia
 using LMDiskANN
 using Random
 
 # create an index with dimension = 5
-index = createIndex("my_index", 5)
+index = create_index("my_index", 5)
 
 # insert a random vector
 v1 = rand(Float32, 5)
@@ -47,4 +47,4 @@ ann_delete!(index, "myvec")
 ```
 
 ## original paper introducing the LM-DiskANN algorithm
-Pan, Yu, Jianxin Sun, and Hongfeng Yu. "Lm-diskann: Low memory footprint in disk-native dynamic graph-based ann indexing." 2023 IEEE International Conference on Big Data (BigData). IEEE, 2023.
+"LM-diskann: Low memory footprint in disk-native dynamic graph-based ann indexing." Pan, Yu, Jianxin Sun, and Hongfeng Yu, 2023 IEEE International Conference on Big Data (BigData). IEEE, 2023.

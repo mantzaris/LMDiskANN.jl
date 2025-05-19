@@ -136,7 +136,7 @@ end
     
     index_prefix = "temp_test_index"
     dim = 4
-    index = createIndex(index_prefix, dim)
+    index = create_index(index_prefix, dim)
 
     vec2 = rand(Float32, dim)
     emb1 = rand(Float32, dim)
@@ -215,7 +215,7 @@ end
     index_prefix = "temp_test_index_integration"
     dim = 5
 
-    index = createIndex(index_prefix, dim)
+    index = create_index(index_prefix, dim)
     @test index.dim == dim
     @test index.num_points == 0
     @test index.entrypoint == -1
@@ -330,7 +330,7 @@ end
 
     base_path = "temp_lmdiskann_2000vecs"
     dim = 100
-    index = createIndex(base_path, dim)
+    index = create_index(base_path, dim)
     
     num_vectors = 2000
     all_vectors = [rand(Float32, dim) for _ in 1:num_vectors]
@@ -410,7 +410,7 @@ function run_lmdiskann_test_scenario(path_prefix::String, dim::Int, num_vectors:
 
     @testset "LMDiskANN scenario: dim=$dim, n=$num_vectors" begin
         # 1 create index
-        index = createIndex(path_prefix, dim)
+        index = create_index(path_prefix, dim)
         @test index.dim == dim
         @test index.num_points == 0
 
@@ -473,7 +473,7 @@ end
     @testset "Default Float32" begin
         index_prefix_32 = "temp_param_index32"
         dim = 4
-        index32 = createIndex(index_prefix_32, dim)
+        index32 = create_index(index_prefix_32, dim)
 
         vec1_32 = rand(Float32, dim)
         (key1, id1) = ann_insert!(index32, vec1_32)
@@ -493,7 +493,7 @@ end
 
         index_prefix_64 = "temp_param_index64"
         dim = 4
-        index64 = createIndex(index_prefix_64, dim; T=Float64)
+        index64 = create_index(index_prefix_64, dim; T=Float64)
 
         #check underlying array type
         @test typeof(index64.vecs) == Array{Float64,2}
@@ -532,7 +532,7 @@ end
 
         index_prefix_16 = "temp_param_index16"
         dim = 4
-        index16 = createIndex(index_prefix_16, dim; T=Float16)
+        index16 = create_index(index_prefix_16, dim; T=Float16)
 
         #check underlying array type
         @test typeof(index16.vecs) == Array{Float16,2}
