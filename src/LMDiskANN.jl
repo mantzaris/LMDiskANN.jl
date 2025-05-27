@@ -434,7 +434,7 @@ end
 """
     search(index::LMDiskANNIndex{T},
                 query_vec::AbstractVector{<:AbstractFloat};
-                topk::Int=10) where {T<:AbstractFloat}
+                topk::Int=10, ef=DEFAULT_EF_SEARCH) where {T<:AbstractFloat}
 
 Returns top-k approximate nearest neighbors for query_vec.
 
