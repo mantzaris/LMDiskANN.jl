@@ -1,6 +1,5 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) 
-<!-- [![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://mantzaris.github.io/LMDiskANN.jl/)  -->
-[![Docs - stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://mantzaris.github.io/LMDiskANN.jl/stable)
+[![Docs - stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://mantzaris.github.io/LMDiskANN.jl/stable)<!-- [![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://mantzaris.github.io/LMDiskANN.jl/)  -->
 [![Docs - dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://mantzaris.github.io/LMDiskANN.jl/dev)
 [![Build Status](https://github.com/mantzaris/LMDiskANN.jl/actions/workflows/ci.yml/badge.svg?branch=main&refresh=1)](https://github.com/mantzaris/LMDiskANN.jl/actions)
 

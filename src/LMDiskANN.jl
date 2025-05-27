@@ -17,7 +17,7 @@ export get_embedding_from_id, get_embedding_from_key
 
 const DEFAULT_MAX_DEGREE = 64  # max number of neighbors
 const SEARCH_LIST_SIZE   = 64  # search BFS/greedy queue size
-const EF_SEARCH          = 300 # search expansion factor
+const DEFAULT_EF_SEARCH          = 300 # search expansion factor
 const EF_CONSTRUCTION    = 400 # construction expansion factor
 
 """
@@ -442,9 +442,10 @@ Returns top-k approximate nearest neighbors for query_vec.
 - `index::LMDiskANNIndex`: The index to search
 - `query_vec::AbstractVector{Float32}`: The query vector
 - `topk::Int=10`: Number of nearest neighbors to return
+- `ef::Int=DEFAULT_EF_SEARCH` (size of the candidate list explored during the graph, larger `ef` means higher recall but slower queries) and `ef` is automatically promoted to at least `topk`.
 
 # Returns
-- `Tuple (key,id)`: Keys and IDs of the top-k nearest neighbors (string, int)
+- `Vector{Tuple{Union{String,Nothing}, Int}}` : a list of (key, id) pairs for the top-k nearest neighbours
 
 # Example
 ```julia
@@ -453,12 +454,13 @@ results = LMDiskANN.search(index, query_vec, topk=5)
 """
 function search(index::LMDiskANNIndex{T},
                 query_vec::AbstractVector{<:AbstractFloat};
-                topk::Int=10) where {T<:AbstractFloat}
+                topk::Int=10,
+                ef::Int = DEFAULT_EF_SEARCH) where {T<:AbstractFloat}
     if index.num_points == 0
         return Vector{Tuple{Union{String,Nothing}, Int}}()
     end
     local_q = convert(Vector{T}, query_vec)
-    ef_candidates = _search_graph(index, local_q, max(topk, EF_SEARCH))
+    ef_candidates = _search_graph(index, local_q, max(topk, ef))
 
     dist_id_pairs = Vector{Tuple{T,Int}}()
     for cid in ef_candidates
