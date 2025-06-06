@@ -149,7 +149,6 @@ Found a bug or an issue? Help us improve by reporting it. Please:
 
 
 
-Documentation for [LMDiskANN](https://github.com/mantzaris/LMDiskANN.jl).
 
 
 # Functions
