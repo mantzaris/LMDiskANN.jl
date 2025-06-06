@@ -45,7 +45,7 @@ This approach benefits practitioners who need large-scale nearest neighbor index
 
 ## State of the field
 
-There are various open source ANN implementations and variants in other languages that are standalone or reside within different packages. Within the Julia ecosystem there are fewer options for users to choose from. The package SimilaritySearch.jl [@tellez2022similarity, @Tellez2022], offers the most mature codebase. Other notable options exist such as HNSW.jl and NearestNeighborDescent.jl. For applications involving massive datasets that exceed available RAM these options do not leverage disk space. These alternative do not offer the user the ability to insert and delete entries from an already constructed index which is essential for online framework integrations. This was the main motivation for [@singh2021freshdiskann] which describes the need for such utility.
+There are various open source ANN implementations and variants in other languages that are standalone or reside within different packages. Within the Julia ecosystem there are fewer options for users to choose from. The package SimilaritySearch.jl [@tellez2022similarity;@Tellez2022], offers the most mature codebase. Other notable options exist such as HNSW.jl and NearestNeighborDescent.jl. For applications involving massive datasets that exceed available RAM these options do not leverage disk space. These alternative do not offer the user the ability to insert and delete entries from an already constructed index which is essential for online framework integrations. This was the main motivation for [@singh2021freshdiskann] which describes the need for such utility.
 
 
 # Acknowledgements

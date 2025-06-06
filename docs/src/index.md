@@ -122,7 +122,37 @@ end
 
 
 
+## Contributing
+
+We welcome contributions from the community! To contribute to this project:
+
+1. **Fork the repository** and create your branch from `main`.
+2. **Write clear, modular code** and follow existing code conventions.
+3. **Document your changes** clearly in code and, if needed, in the `README.md`.
+4. **Test your changes** thoroughly.
+5. Submit a **Pull Request** with a clear description of what you've added or changed.
+
+Or for general ideas please feel free to share them.
+
+---
+
+## Reporting Issues
+
+Found a bug or an issue? Help us improve by reporting it. Please:
+
+- Open a new [GitHub Issue](https://github.com/mantzaris/LMDiskANN.jl/issues).
+- Include a **clear and descriptive title**.
+- Provide steps to **reproduce the problem**, expected vs. actual behavior, and your system/environment details.
+- Add relevant **logs, screenshots, or error messages** to help diagnose the issue.
+
+---
+
+
+
 Documentation for [LMDiskANN](https://github.com/mantzaris/LMDiskANN.jl).
+
+
+# Functions
 
 ```@index
 ```
