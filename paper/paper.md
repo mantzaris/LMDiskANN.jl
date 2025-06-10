@@ -20,7 +20,7 @@ bibliography: paper.bib
 
 # Summary
 
-**LMDiskANN.jl** is a Julia package that implements the Low Memory Disk Approximate Nearest Neighbor search algorithm (LM-DiskANN) [@pan2023lm], extending DiskANN-based methods [@jayaram2019diskann; @singh2021freshdiskann] for fast, accurate billion-point nearest neighbor search while significantly reducing in-memory usage. By leveraging memory-mapped files, a dynamic graph-based index, and tunable BFS expansions, **LMDiskANN.jl** enables large-scale similarity search on commodity hardware. This package integrates well with embedding-based workflows common in vector databases and modern machine learning pipelines. It also allows for insertions and deletions after the index has been constructed with operations to keep the index pruned of unnecessary connections in the graph.
+**LMDiskANN.jl** is a Julia [@julia] package that implements the Low Memory Disk Approximate Nearest Neighbor search algorithm (LM-DiskANN) [@pan2023lm], extending DiskANN-based methods [@jayaram2019diskann; @singh2021freshdiskann] for fast, accurate billion-point nearest neighbor search while significantly reducing in-memory usage. By leveraging memory-mapped files, a dynamic graph-based index, and tunable BFS expansions, **LMDiskANN.jl** enables large-scale similarity search on commodity hardware. This package integrates well with embedding-based workflows common in vector databases and modern machine learning pipelines. It also allows for insertions and deletions after the index has been constructed with operations to keep the index pruned of unnecessary connections in the graph.
 
 Features include:
 
