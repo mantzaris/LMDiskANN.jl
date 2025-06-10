@@ -11,7 +11,7 @@ Julia Implementation of Low Memory Disk ANN (LM-DiskANN)
 ## Key Features
 - **Disk‐Resident**: Vectors and adjacency lists are stored in memory‐mapped files, reducing RAM usage.
 - **Graph‐Based Search**: Leverages a BFS expansion (`EF_SEARCH`) for approximate neighbor lookups.
-- **Insert & Delete**: Dynamically insert or remove embeddings without fully rebuilding the index.
+- **Insert & Delete**: Dynamically insert or remove embeddings without needing to rebuild the index.
 - **User Keys**: Link a string key (e.g. `"image123"`) to your internal node ID; retrieve or delete by either integer ID or key.
 
 ## Quick Start Example
