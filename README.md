@@ -2,6 +2,7 @@
 [![Docs - stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://mantzaris.github.io/LMDiskANN.jl/stable)<!-- [![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://mantzaris.github.io/LMDiskANN.jl/)  -->
 [![Docs - dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://mantzaris.github.io/LMDiskANN.jl/dev)
 [![Build Status](https://github.com/mantzaris/LMDiskANN.jl/actions/workflows/ci.yml/badge.svg?branch=main&refresh=1)](https://github.com/mantzaris/LMDiskANN.jl/actions)
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.08199/status.svg)](https://doi.org/10.21105/joss.08199)
 
 # LMDiskANN.jl
 Julia Implementation of Low Memory Disk ANN (LM-DiskANN)
@@ -46,6 +47,12 @@ retrieved_v2 = get_embedding_from_key(index, "myvec")
 ann_delete!(index, id1)
 ann_delete!(index, "myvec")
 ```
+
+## citing this work
+
+- Mantzaris, A. V., (2025). LMDiskANN.jl: An Implementation of the Low Memory Disk Approximate Nearest Neighbors Search Algorithm. Journal of Open Source Software, 10(110), 8199, https://doi.org/10.21105/joss.08199
+
+- @article{Mantzaris2025, doi = {10.21105/joss.08199}, url = {https://doi.org/10.21105/joss.08199}, year = {2025}, publisher = {The Open Journal}, volume = {10}, number = {110}, pages = {8199}, author = {Alexander V. Mantzaris}, title = {LMDiskANN.jl: An Implementation of the Low Memory Disk Approximate Nearest Neighbors Search Algorithm}, journal = {Journal of Open Source Software} } 
 
 ## original paper introducing the LM-DiskANN algorithm
 "LM-diskann: Low memory footprint in disk-native dynamic graph-based ann indexing." Pan, Yu, Jianxin Sun, and Hongfeng Yu, 2023 IEEE International Conference on Big Data (BigData). IEEE, 2023.
