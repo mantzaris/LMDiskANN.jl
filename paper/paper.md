@@ -36,10 +36,15 @@ By combining these capabilities, **LMDiskANN.jl** aims to reduce the memory foot
 Approximate Nearest Neighbor (ANN) search is a crucial component in domains such as recommendation systems, information retrieval, and representation learning (e.g., embeddings for natural language or computer vision). Traditional approaches can suffer from excessive memory usage and slow scaling when dealing with billions of points [@nene1997simple; @wang2021comprehensive]. By persisting adjacency structures on disk rather than in memory, **LMDiskANN.jl** addresses some of these bottlenecks, providing:
 
 1. **Reduced Memory Overhead**: Only a minimal fraction of data needs to reside in RAM, making it feasible to handle larger datasets on modest machines.  
+
 2. **Dynamic Updates**: Graph-based insertions and deletions support real-time or streaming scenarios where data is continually changing.  
+
 3. **High Recall**: Tuning BFS expansions and adjacency degrees can yield high-quality nearest neighbor results.  
+
 4. **Insertions and Deletions**: Ability to insert and delete from a built index.
-5. **Scalable Architecture**: Built on Julia's high-performance ecosystem, bridging native disk operations and advanced numeric libraries.
+
+5. **Scalable Architecture**: Built on Julia's high-performance ecosystem, bridging native disk operations and advanced numeric libraries.  
+
 
 This approach benefits practitioners who need large-scale nearest neighbor indexing without specialized cluster infrastructures or extremely large memory capacities. The set up is made to have minimal requirements and has a simple installation procedure. Using the package involves a few number of steps and examples are provided in the documentation. 
 
